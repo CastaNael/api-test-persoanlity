@@ -61,13 +61,46 @@ const questions: Question[] = [
   }
 ];
 
-const traitDescriptions: Record<string, string> = {
-  openness: "Sos creativo, curioso y abierto a nuevas ideas.",
-  conscientiousness: "Te destacás por tu organización, disciplina y responsabilidad.",
-  extraversion: "Disfrutás de la compañía de otros y sos enérgico en lo social.",
-  agreeableness: "Sos empático, amable y valorás la cooperación.",
-  neuroticism: "Sos sensible a las emociones y podés preocuparte con facilidad."
-};
+// Función para categorizar puntajes
+function categorize(score: number): "high" | "low" | "medium" {
+  if (score >= 2) return "high";
+  if (score <= -1) return "low";
+  return "medium";
+}
+
+// Perfiles compuestos: combinación de rasgos → personaje
+const compositeProfiles = [
+  {
+    conditions: { openness: "high", agreeableness: "low", extraversion: "low" },
+    nombre: "Albert Einstein",
+    descripcion: "Tenés una mente abierta, poca empatía y preferís la introspección.",
+    imagen: "https://upload.wikimedia.org/wikipedia/commons/d/d3/Albert_Einstein_Head.jpg"
+  },
+  {
+    conditions: { conscientiousness: "high", neuroticism: "low" },
+    nombre: "Hermione Granger",
+    descripcion: "Sos organizada y estable emocionalmente.",
+    imagen: "https://upload.wikimedia.org/wikipedia/en/d/d3/Hermione_Granger_poster.jpg"
+  },
+  {
+    conditions: { extraversion: "high", agreeableness: "high" },
+    nombre: "Tony Stark",
+    descripcion: "Sos sociable y empático, te gusta liderar y conectar.",
+    imagen: "https://upload.wikimedia.org/wikipedia/en/e/e0/Iron_Man_bleeding_edge.jpg"
+  },
+  {
+    conditions: { agreeableness: "high", openness: "medium" },
+    nombre: "Mahatma Gandhi",
+    descripcion: "Sos empático, amable y valorás la armonía.",
+    imagen: "https://upload.wikimedia.org/wikipedia/commons/d/d1/Mahatma-Gandhi%2C_studio%2C_1931.jpg"
+  },
+  {
+    conditions: { neuroticism: "high", extraversion: "low" },
+    nombre: "Woody Allen",
+    descripcion: "Sos sensible, introspectivo y emocionalmente profundo.",
+    imagen: "https://upload.wikimedia.org/wikipedia/commons/6/6e/Woody_Allen_%282015%29.jpg"
+  }
+];
 
 router.get("/questions", (_req, res) => {
   setTimeout(() => res.json(questions), 600);
@@ -75,7 +108,6 @@ router.get("/questions", (_req, res) => {
 
 router.post("/submit", (req, res) => {
   const answers: Record<string, string> = req.body?.answers ?? {};
-  const scoreMap: Record<string, number> = { a: 5, b: 4, c: 3, d: 2, e: 1 };
 
   const traits: Traits = {
     openness: 0,
@@ -85,24 +117,63 @@ router.post("/submit", (req, res) => {
     neuroticism: 0
   };
 
+  // Sumar puntos básicos (acuerdo = +1, desacuerdo = -1)
   for (const q of questions) {
     const selected = answers[q.id];
-    const key = selected?.slice(-1);
-    const incr = key ? scoreMap[key] ?? 3 : 3;
+    if (!selected) continue;
+
+    const key = selected.slice(-1); // a, b, c, d, e
+    let incr = 0;
+    if (key === "a") incr = 2;
+    else if (key === "b") incr = 1;
+    else if (key === "d") incr = -1;
+    else if (key === "e") incr = -2;
 
     const trait = q.options.find(opt => opt.id === selected)?.trait;
     if (trait) traits[trait] += incr;
   }
 
-  const sortedTraits = Object.entries(traits).sort((a, b) => b[1] - a[1]);
+  // Categorizar cada rasgo
+  const categories = Object.fromEntries(
+    Object.entries(traits).map(([trait, score]) => [trait, categorize(score)])
+  );
+
+  // Buscar perfil compuesto que coincida
+  const perfil = compositeProfiles.find(p =>
+    Object.entries(p.conditions).every(([trait, expected]) => categories[trait] === expected)
+  );
+
+  // Siempre devolver summary para que ResultCard no rompa
+  const summary = Object.entries(traits).map(([trait, score]) => ({
+    trait,
+    score,
+    description: `Nivel de ${trait}: ${categories[trait]}`
+  }));
+
+  if (!perfil) {
+    return res.json({
+      traits,
+      categories,
+      summary,
+      personality: {
+        trait: "none",
+        nombre: "Sin coincidencia",
+        descripcion: "Tu combinación de rasgos no coincide con un perfil definido.",
+        imagen: ""
+      }
+    });
+  }
 
   res.json({
     traits,
-    summary: sortedTraits.map(([trait, score]) => ({
-      trait,
-      score,
-      description: traitDescriptions[trait]
-    }))
+    categories,
+    summary,
+    personality: {
+      trait: "composite",
+      nombre: perfil.nombre,
+      descripcion: perfil.descripcion,
+      imagen: perfil.imagen
+    }
   });
 });
 
